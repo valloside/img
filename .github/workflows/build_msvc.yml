@@ -33,4 +33,4 @@ jobs:
               with:
                   name: ${{ github.event.repository.name }}-release-msvc-${{ github.sha }}
                   path: |
-                      bin/
+                      build/bin/

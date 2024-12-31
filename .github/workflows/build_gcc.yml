@@ -39,4 +39,4 @@ jobs:
               with:
                   name: ${{ github.event.repository.name }}-release-mingw64-${{ github.sha }}
                   path: |
-                      bin/
+                      build/bin/
