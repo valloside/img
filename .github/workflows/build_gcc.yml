@@ -17,15 +17,11 @@ jobs:
               with:
                   submodules: recursive
 
-            - name: Setup MinGW-w64 environment
+            - name: Setup mingw64
               run: |
-                  curl -L -o winlibs.zip https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0posix-19.1.1-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-mingw-w64ucrt-12.0.0-r2.zip
-                  mkdir winlibs
-                  tar -xf winlibs.zip -C winlibs --strip-components=1
-                  echo "Adding WinLibs GCC to PATH"
-                  echo "${{ github.workspace }}/winlibs/mingw64/bin" >> $GITHUB_PATH
-                  gcc --version
-                  cmake --version
+                  Invoke-WebRequest https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0posix-19.1.1-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-mingw-w64ucrt-12.0.0-r2.zip -OutFile C:\mingw64.zip
+                  Expand-Archive -Force C:\mingw64.zip -DestinationPath C:\
+              shell: pwsh
 
             - name: Configure
               run: |
