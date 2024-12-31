@@ -1,0 +1,29 @@
+name: CMake Build with MSVC
+
+on:
+    push:
+        branches:
+            - master
+    pull_request:
+        branches:
+            - master
+
+jobs:
+    build-with-msvc:
+        runs-on: windows-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v3
+              with:
+                  submodules: recursive
+
+            - name: Configure with CMake (MSVC)
+              run: |
+                  mkdir build
+                  cd build
+                  cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release ..
+
+            - name: Build with CMake (MSVC)
+              run: |
+                  cd build
+                  cmake --build . --config Release
