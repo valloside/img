@@ -32,4 +32,11 @@ jobs:
             - name: Build
               run: |
                   cd build
-                  cmake --build . --config Release
+                  cmake --build . --config Release --target img
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ github.event.repository.name }}-release-mingw64-${{ github.sha }}
+                  path: |
+                      bin/
