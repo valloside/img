@@ -119,7 +119,7 @@ namespace
         ofn.lpstrFilter = L"Image Files\0*.jpg;*.jpeg;*.png;*.webp;*.bmp\0All Files\0*.*\0";
         ofn.lpstrFile = filePath.data();
         ofn.nMaxFile = MAX_PATH;
-        ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_DONTADDTORECENT | OFN_NOCHANGEDIR;
 
         if (!GetOpenFileNameW(&ofn))
             return {};
