@@ -181,6 +181,10 @@ void GUIapp::GUIappImpl::renderUI()
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
     ImGui::SetNextWindowViewport(viewport->ID);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0.0f, 0.0f});
     ImGui::Begin("DockSpace", nullptr,
                  ImGuiWindowFlags_NoDocking
                      | ImGuiWindowFlags_NoTitleBar
@@ -189,6 +193,7 @@ void GUIapp::GUIappImpl::renderUI()
                      | ImGuiWindowFlags_NoResize
                      | ImGuiWindowFlags_NoBringToFrontOnFocus
                      | ImGuiWindowFlags_NoNavFocus);
+    ImGui::PopStyleVar(3);
 
     if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_DockingEnable)
     {
@@ -212,6 +217,7 @@ void GUIapp::GUIappImpl::renderUI()
     }
 
     // 显示图片区域
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{30 / 255.0f, 30 / 255.0f, 30 / 255.0f, 1.0f});
     if (ImGui::Begin("Image Display", nullptr, ImGuiWindowFlags_NoMove))
     {
         if (imageData::imageStatus != ImageStatus::NO_IMAGE)
@@ -228,7 +234,9 @@ void GUIapp::GUIappImpl::renderUI()
         }
     }
     ImGui::End();
+    ImGui::PopStyleColor();
 
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{26 / 255.0f, 26 / 255.0f, 26 / 255.0f, 1.0f});
     if (ImGui::Begin("Compress Options", nullptr, ImGuiWindowFlags_NoMove))
     {
         // 加载图片按钮
@@ -345,8 +353,8 @@ void GUIapp::GUIappImpl::renderUI()
                                        : ImageStatus::PEDDING_FOR_COMPRESS;
         }
     }
-
     ImGui::End();
+    ImGui::PopStyleColor();
 
     // ImGui::ShowDemoWindow();
 

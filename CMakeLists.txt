@@ -30,6 +30,7 @@ else()
 endif()
 
 add_subdirectory(ext/opencv)
+add_subdirectory(ext/freetype)
 
 set(GENERATED_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include/opencv2)
 file(MAKE_DIRECTORY ${GENERATED_INCLUDE_DIR})
@@ -60,6 +61,7 @@ include_directories(
     ext/opencv/modules/videoio/include
     ext/opencv/modules/world/include
     ext/imgui
+    ext/freetype/include
     include
 )
 
@@ -67,4 +69,4 @@ file(GLOB_RECURSE native_srcs src/*.cpp)
 file(GLOB_RECURSE imgui_srcs ext/imgui/*.cpp)
 add_executable(img ${native_srcs} ${imgui_srcs})
 
-target_link_libraries(img PRIVATE opencv_core opencv_imgcodecs opencv_imgproc d3d11.lib dxgi.lib d3dcompiler.lib dxguid.lib Dwmapi.lib)
+target_link_libraries(img PRIVATE opencv_core opencv_imgcodecs opencv_imgproc freetype d3d11.lib dxgi.lib d3dcompiler.lib dxguid.lib Dwmapi.lib)
