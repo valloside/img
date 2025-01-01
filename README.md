@@ -8,4 +8,4 @@ A: 没有
 
 ## 界面截图
 
-[](./misc/capture.webp)
+![](./misc/capture.webp)
