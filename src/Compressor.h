@@ -8,7 +8,7 @@
 class Compressor
 {
 public:
-    struct CompressionParams
+    struct Params
     {
         double scale = 1.0;    // 尺寸缩放比例（0.0-1.0），默认1.0
         int    quality = 80;   // 压缩质量（0-100），默认80
@@ -22,44 +22,6 @@ public:
         } format = JPEG; // 输出格式
     };
 
-    Compressor();
-    ~Compressor();
-
-    bool tryAddCompressionTask(const cv::Mat &image, std::variant<cv::Mat *, std::vector<uchar> *> output, const CompressionParams &param);
-    bool tryAddCompressionTask(const cv::Mat &image, std::vector<uchar> &output, const CompressionParams &param);
-    bool tryAddCompressionTask(const cv::Mat &image, cv::Mat &output, const CompressionParams &param);
-
-    bool checkTaskFinished();
-
-    static constexpr std::string_view formatEnumToString(CompressionParams::Format format)
-    {
-        switch (format)
-        {
-        case CompressionParams::JPEG:
-            return ".jpg";
-        case CompressionParams::PNG:
-            return ".png";
-        case CompressionParams::WEBP:
-            return ".webp";
-        default:
-            return ".jpg";
-        }
-    }
-    static constexpr std::wstring_view formatEnumToWstring(CompressionParams::Format format)
-    {
-        switch (format)
-        {
-        case CompressionParams::JPEG:
-            return L".jpg";
-        case CompressionParams::PNG:
-            return L".png";
-        case CompressionParams::WEBP:
-            return L".webp";
-        default:
-            return L".jpg";
-        }
-    }
-
     enum class Status
     {
         Uninitailized = 0,
@@ -70,27 +32,79 @@ public:
         ThreadExit
     };
 
-    std::atomic<Status> mTaskStatus = Status::Uninitailized;
+    using TaskHandle = uint32_t;
+
+    static constexpr uint32_t InalidHandle = std::numeric_limits<uint32_t>::max();
+
+    Compressor(uint32_t maxThread = std::thread::hardware_concurrency());
+    ~Compressor();
+
+    TaskHandle addCompressionTask(const cv::Mat &image, const Params &param);
+
+    bool checkTaskFinished(Compressor::TaskHandle handle);
+
+    void removeTask(Compressor::TaskHandle handle);
+
+    std::vector<uchar> getCompressResult(Compressor::TaskHandle handle);
+
+    static constexpr std::string_view formatEnumToString(Params::Format format)
+    {
+        switch (format)
+        {
+        case Params::JPEG:
+            return ".jpg";
+        case Params::PNG:
+            return ".png";
+        case Params::WEBP:
+            return ".webp";
+        default:
+            return ".jpg";
+        }
+    }
+    static constexpr std::wstring_view formatEnumToWstring(Params::Format format)
+    {
+        switch (format)
+        {
+        case Params::JPEG:
+            return L".jpg";
+        case Params::PNG:
+            return L".png";
+        case Params::WEBP:
+            return L".webp";
+        default:
+            return L".jpg";
+        }
+    }
 
 private:
-    std::mutex              mMutex;
-    std::condition_variable mCondi;
-    std::mutex              mOnDestroyMutex;
-    std::condition_variable mDestroyCondi;
-    CompressionParams       mCompressionParam;
+    std::mutex                mMutex;
+    std::condition_variable   mCondi;
+    std::vector<std::jthread> mCompressWorkers;
+    uint32_t                  mMaxThread;
+    uint32_t                  mIdleThread = 0;
+    TaskHandle                mGenId = 0;
+    bool                      mThreadDestroy = false;
 
-    std::atomic<bool> mCompressionStarting = false;
-    std::atomic<bool> mCompressionThreadExit = false;
+    struct Task
+    {
+        TaskHandle mId;
 
-    bool mHasTask = false;
-    bool mDestroyThread = false;
+        cv::Mat            mRawImage;
+        std::vector<uchar> mOutputImage;
 
-    cv::Mat                                       mRawImage;
-    std::variant<cv::Mat *, std::vector<uchar> *> mOutputImage;
+        Params mCompressionParam;
+        Status mStatus = Status::Uninitailized;
+    };
 
-    std::thread mCompressThread;
+    std::mutex       mTaskMutex;
+    std::queue<Task> mQueuedTasks;
+
+    std::vector<TaskHandle> mPendingRemoveTasks;
+
+    std::mutex        mFinishedTaskMutex;
+    std::vector<Task> mFinishedTasks;
 
     void compressThreadFunc();
 
-    bool compressImage();
+    static bool compressImage(Task &task);
 };

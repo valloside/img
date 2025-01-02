@@ -45,6 +45,9 @@ private:
         static void renderUI();
 
         static void onDropImageFile(std::wstring &&path);
+
+    private:
+        static void refreshOpenedImageStatus();
     };
 
     static bool           CreateDeviceD3D(HWND hWnd);

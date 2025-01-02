@@ -21,16 +21,16 @@ namespace
         }
     }
 
-    static constexpr Compressor::CompressionParams::Format stringToFormatEnum(std::string_view format)
+    static constexpr Compressor::Params::Format stringToFormatEnum(std::string_view format)
     {
         if (format == ".jpg" || format == ".jpeg")
-            return Compressor::CompressionParams::JPEG;
+            return Compressor::Params::JPEG;
         else if (format == ".png")
-            return Compressor::CompressionParams::PNG;
+            return Compressor::Params::PNG;
         else if (format == ".webp")
-            return Compressor::CompressionParams::WEBP;
+            return Compressor::Params::WEBP;
         else
-            return Compressor::CompressionParams::_count;
+            return Compressor::Params::_count;
     }
 
 } // namespace
@@ -55,7 +55,7 @@ int ConsoleApp::start(int argc, char *argv[])
     std::string formatString = fs::path(output_path).extension().string();
     auto        format = stringToFormatEnum(formatString);
 
-    if (format == Compressor::CompressionParams::_count)
+    if (format == Compressor::Params::_count)
     {
         std::cerr << "Error: Input file does not exist: " << formatString << '\n';
         return EXIT_FAILURE;
@@ -70,14 +70,13 @@ int ConsoleApp::start(int argc, char *argv[])
     cv::Mat image = loadImage(input_path);
     if (image.empty())
         std::cerr << "Error: Cannot open file: " << input_path << '\n';
-    std::vector<uchar> out;
-    Compressor         compressor;
-    while (!compressor.tryAddCompressionTask(image, out, {.scale = scale, .quality = quality, .toGray = toGray, .format = format}))
+    Compressor             compressor;
+    Compressor::TaskHandle handle = compressor.addCompressionTask(image, {.scale = scale, .quality = quality, .toGray = toGray, .format = format});
+
+    while (!compressor.checkTaskFinished(handle))
         std::this_thread::sleep_for(std::chrono::milliseconds{20});
 
-    while (!compressor.checkTaskFinished())
-        std::this_thread::sleep_for(std::chrono::milliseconds{20});
-
+    std::vector<uchar> out = compressor.getCompressResult(handle);
     if (out.empty())
     {
         std::cerr << "Error: Failed to compress image: " << output_path << '\n';

@@ -331,8 +331,14 @@ LRESULT WINAPI GUIapp::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         break;
     case WM_DROPFILES: {
         std::wstring buffer(MAX_PATH, 0);
-        DragQueryFileW((HDROP)wParam, 0, buffer.data(), MAX_PATH);
-        GUIappImpl::onDropImageFile(std::move(buffer));
+        UINT         filecount = DragQueryFileW((HDROP)wParam, -1, nullptr, 0);
+        for (size_t i = 0; i < filecount; i++)
+        {
+            DragQueryFileW((HDROP)wParam, i, buffer.data(), MAX_PATH);
+            GUIappImpl::onDropImageFile(std::move(buffer));
+            buffer.resize(MAX_PATH);
+        }
+        s_enableSleepOptimize = false;
         break;
     }
     case WM_MOUSEMOVE:

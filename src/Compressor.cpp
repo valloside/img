@@ -2,128 +2,147 @@
 
 using namespace std::chrono_literals;
 
-Compressor::Compressor() :
-    mCompressThread([this]() {
-        this->compressThreadFunc();
-    }) {}
+Compressor::Compressor(uint32_t maxThread) :
+    mMaxThread(maxThread)
+{
+    this->mCompressWorkers.reserve(this->mMaxThread);
+}
 
 Compressor::~Compressor()
 {
-    while (this->mTaskStatus != Status::ThreadExit)
-    {
-        this->mTaskStatus = Status::WaitingForExit;
-        this->mCondi.notify_one();
-        std::this_thread::sleep_for(10ms);
-    }
-    this->mCompressThread.join();
+    std::unique_lock lock{this->mMutex};
+    this->mThreadDestroy = true;
+    this->mCondi.notify_all();
 }
 
-bool Compressor::tryAddCompressionTask(const cv::Mat &image, std::variant<cv::Mat *, std::vector<uchar> *> output, const CompressionParams &param)
+Compressor::TaskHandle Compressor::addCompressionTask(const cv::Mat &image, const Params &param)
 {
-    Status from = Status::TaskEnded;
-    if (this->mTaskStatus.compare_exchange_strong(from, Status::Idle) || from == Status::Idle)
+    TaskHandle ret;
     {
-        this->mRawImage = image;
-        this->mOutputImage = std::move(output);
-        this->mCompressionParam = param;
         std::unique_lock lock{this->mMutex};
-        this->mCondi.notify_one();
-        return true;
+        this->mQueuedTasks.emplace(this->mGenId, image, std::vector<uchar>{}, param);
+        ret = this->mGenId++;
+        if (this->mIdleThread == 0 && this->mCompressWorkers.size() < this->mMaxThread)
+            this->mCompressWorkers.emplace_back([this]() {
+                this->compressThreadFunc();
+            });
     }
-    return false;
+    this->mCondi.notify_one();
+    return ret;
+}
+bool Compressor::checkTaskFinished(Compressor::TaskHandle handle)
+{
+    std::unique_lock lock{this->mFinishedTaskMutex};
+
+    auto iter = std::find_if(this->mFinishedTasks.begin(),
+                             this->mFinishedTasks.end(),
+                             [handle](const Compressor::Task &task) {
+                                 return task.mId == handle;
+                             });
+    return iter != this->mFinishedTasks.end();
 }
 
-bool Compressor::tryAddCompressionTask(const cv::Mat &image, std::vector<uchar> &output, const CompressionParams &param)
+void Compressor::removeTask(Compressor::TaskHandle handle)
 {
-    return this->tryAddCompressionTask(image, &output, param);
+    if (handle == Compressor::InalidHandle)
+        return;
+    std::unique_lock lock{this->mFinishedTaskMutex};
+    std::size_t erased = std::erase_if(this->mFinishedTasks, [handle](const Compressor::Task &task) { return task.mId == handle; });
+    if (erased == 0)
+        this->mPendingRemoveTasks.emplace_back(handle);
+    return;
 }
 
-bool Compressor::tryAddCompressionTask(const cv::Mat &image, cv::Mat &output, const CompressionParams &param)
+std::vector<uchar> Compressor::getCompressResult(Compressor::TaskHandle handle)
 {
-    return this->tryAddCompressionTask(image, &output, param);
-}
+    std::unique_lock lock{this->mFinishedTaskMutex};
 
-bool Compressor::checkTaskFinished()
-{
-    Status from = Status::TaskEnded;
-    return this->mTaskStatus.compare_exchange_strong(from, Status::Idle);
+    auto iter = std::find_if(this->mFinishedTasks.begin(),
+                             this->mFinishedTasks.end(),
+                             [handle](const Compressor::Task &task) {
+                                 return task.mId == handle;
+                             });
+    if (iter != this->mFinishedTasks.end())
+    {
+        std::vector<uchar> ret = std::move(iter->mOutputImage);
+        this->mFinishedTasks.erase(iter);
+        return ret;
+    }
+    else
+    {
+        return {};
+    }
 }
 
 void Compressor::compressThreadFunc()
 {
+    pthread_setname_np(pthread_self(), "Compressing Thread");
     std::unique_lock lock{this->mMutex};
-    Status           from = Status::Uninitailized;
-    this->mTaskStatus.compare_exchange_strong(from, Status::Idle);
     while (true)
     {
-        this->mCondi.wait(lock);
-        Status from = Status::Idle;
-        if (!this->mTaskStatus.compare_exchange_strong(from, Status::TaskStarted))
+        if (this->mQueuedTasks.empty())
         {
-            if (from == Status::WaitingForExit)
+            ++mIdleThread;
+            this->mCondi.wait(lock);
+            --mIdleThread;
+            if (this->mThreadDestroy)
                 break;
-            else
+            if (this->mQueuedTasks.empty())
                 continue;
         }
-        this->compressImage();
-        this->mTaskStatus = Status::TaskEnded;
+
+        Task task = std::move(this->mQueuedTasks.front());
+        this->mQueuedTasks.pop();
+
+        lock.unlock();
+        Compressor::compressImage(task);
+        {
+            std::unique_lock lock2{this->mFinishedTaskMutex};
+            if (std::erase_if(this->mPendingRemoveTasks, [&task](TaskHandle id) { return task.mId == id; }) == 0)
+            {
+                this->mFinishedTasks.emplace_back(std::move(task));
+            }
+        }
+        lock.lock();
     }
-    this->mTaskStatus = Status::ThreadExit;
 }
 
 // 图片压缩处理
-bool Compressor::compressImage()
+bool Compressor::compressImage(Task &task)
 {
     // 调整尺寸
-    if (this->mCompressionParam.scale > 0.0 && this->mCompressionParam.scale < 1.0)
+    if (task.mCompressionParam.scale > 0.0 && task.mCompressionParam.scale < 1.0)
     {
-        cv::resize(this->mRawImage, this->mRawImage, cv::Size(), this->mCompressionParam.scale, this->mCompressionParam.scale, cv::INTER_LINEAR);
+        cv::resize(task.mRawImage, task.mRawImage, cv::Size(), task.mCompressionParam.scale, task.mCompressionParam.scale, cv::INTER_LINEAR);
     }
 
     // 转换为灰度图
-    if (this->mCompressionParam.toGray)
+    if (task.mCompressionParam.toGray)
     {
-        cv::cvtColor(this->mRawImage, this->mRawImage, cv::COLOR_BGR2GRAY);
+        cv::cvtColor(task.mRawImage, task.mRawImage, cv::COLOR_BGR2GRAY);
     }
 
     try
     {
         std::vector<int> compression_params;
-        switch (this->mCompressionParam.format)
+        switch (task.mCompressionParam.format)
         {
-        case CompressionParams::JPEG:
-            compression_params = {cv::IMWRITE_JPEG_QUALITY, this->mCompressionParam.quality};
+        case Params::JPEG:
+            compression_params = {cv::IMWRITE_JPEG_QUALITY, task.mCompressionParam.quality};
             break;
-        case CompressionParams::PNG:
-            compression_params = {cv::IMWRITE_PNG_COMPRESSION, 10 - this->mCompressionParam.quality / 10};
+        case Params::PNG:
+            compression_params = {cv::IMWRITE_PNG_COMPRESSION, 10 - task.mCompressionParam.quality / 10};
             break;
-        case CompressionParams::WEBP:
-            compression_params = {cv::IMWRITE_WEBP_QUALITY, this->mCompressionParam.quality};
+        case Params::WEBP:
+            compression_params = {cv::IMWRITE_WEBP_QUALITY, task.mCompressionParam.quality};
             break;
         default:
             return false;
         }
-        if (this->mOutputImage.index() == 1)
-        {
-            return cv::imencode(formatEnumToString(this->mCompressionParam.format).data(),
-                                this->mRawImage,
-                                *std::get<std::vector<uchar> *>(this->mOutputImage),
-                                compression_params);
-        }
-        else
-        {
-            std::vector<uchar> buf;
-            if (!cv::imencode(formatEnumToString(this->mCompressionParam.format).data(),
-                              this->mRawImage,
-                              buf,
-                              compression_params))
-            {
-                return false;
-            }
-            cv::imdecode(buf, cv::IMREAD_UNCHANGED, std::get<cv::Mat *>(this->mOutputImage));
-            return true;
-        }
-
+        return cv::imencode(formatEnumToString(task.mCompressionParam.format).data(),
+                            task.mRawImage,
+                            task.mOutputImage,
+                            compression_params);
     } catch (const cv::Exception &e)
     {
         std::cerr << "OpenCV Error: " << e.what() << '\n';
