@@ -47,7 +47,7 @@ void Compressor::removeTask(Compressor::TaskHandle handle)
     if (handle == Compressor::InalidHandle)
         return;
     std::unique_lock lock{this->mFinishedTaskMutex};
-    std::size_t erased = std::erase_if(this->mFinishedTasks, [handle](const Compressor::Task &task) { return task.mId == handle; });
+    std::size_t      erased = std::erase_if(this->mFinishedTasks, [handle](const Compressor::Task &task) { return task.mId == handle; });
     if (erased == 0)
         this->mPendingRemoveTasks.emplace_back(handle);
     return;
@@ -76,7 +76,9 @@ std::vector<uchar> Compressor::getCompressResult(Compressor::TaskHandle handle)
 
 void Compressor::compressThreadFunc()
 {
+#if _POSIX_THREADS
     pthread_setname_np(pthread_self(), "Compressing Thread");
+#endif
     std::unique_lock lock{this->mMutex};
     while (true)
     {

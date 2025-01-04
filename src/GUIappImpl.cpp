@@ -333,15 +333,12 @@ void GUIapp::GUIappImpl::renderUI()
                     }
                     else if (openedImageIter->textureStatus.result == TextureLoadResult::OTHER_D3D_ERROR)
                     {
-                        ImGui::Text("Direct3D Error, code: %d.", openedImageIter->textureStatus.errCode);
+                        ImGui::Text("Direct3D Error, code: %ld.", openedImageIter->textureStatus.errCode);
                     }
                     ImGui::EndTabItem();
-                }
-                if (openedImageIter->windowOpened)
-                {
                     ++openedImageIter;
                 }
-                else
+                else if (!openedImageIter->windowOpened)
                 {
                     CompressorManager::get().removeTask(openedImageIter->compressHandle);
                     openedImageIter = openedImages.erase(openedImageIter);
