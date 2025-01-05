@@ -343,6 +343,10 @@ void GUIapp::GUIappImpl::renderUI()
                     CompressorManager::get().removeTask(openedImageIter->compressHandle);
                     openedImageIter = openedImages.erase(openedImageIter);
                 }
+                else
+                {
+                    ++openedImageIter;
+                }
             }
             openedImages.shrink_to_fit();
             ImGui::EndTabBar();
