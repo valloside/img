@@ -73,17 +73,16 @@ struct ImageData
 
     bool windowOpened = true;
     bool saved = false;
+};
 
-} emptyImageData;
-
-auto i = sizeof(ImageData);
+static ImageData emptyImageData; // 空数据，表示未打开文件
 
 static std::vector<ImageData> openedImages{};
 
-static uint32_t activeImageWindowIdx = 0;
-static bool     activateLastWindow = false;
+static uint32_t activeImageTabIdx = 0;   // 选中的选项卡的索引
+static bool     activateLastTab = false; // 是否选中最后一个选项卡，用于打开一个新图片时
 
-static std::vector<std::wstring> droppedImages{};
+static std::vector<std::wstring> droppedImages{}; // 拖拽打开的文件（路径）
 
 namespace
 {
@@ -277,88 +276,116 @@ void GUIapp::GUIappImpl::renderUI()
 
     GUIapp::GUIappImpl::refreshOpenedImageStatus();
 
-    // 显示图片区域
+    GUIapp::GUIappImpl::showUI_imageDisplay();
+    GUIapp::GUIappImpl::showUI_compressOptions();
+
+    // ImGui::ShowDemoWindow();
+
+    ImGui::End();
+}
+
+void GUIapp::GUIappImpl::onDropImageFile(std::wstring &&path)
+{
+    droppedImages.emplace_back(std::move(path));
+}
+
+// 显示图片区域
+void GUIapp::GUIappImpl::showUI_imageDisplay()
+{
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{30 / 255.0f, 30 / 255.0f, 30 / 255.0f, 1.0f});
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{4, 0});
-    if (ImGui::Begin("Image Display", nullptr, ImGuiWindowFlags_NoMove))
+    if (ImGui::Begin("Image Display", nullptr, ImGuiWindowFlags_NoMove) && !openedImages.empty())
     {
-        if (!openedImages.empty())
+        // 显示图片选项卡
+        ImGui::BeginTabBar("##OpenedImageTabs", ImGuiTabBarFlags_DrawSelectedOverline);
+        // 遍历所有打开的图片
+        for (auto openedImageIter = openedImages.begin(); openedImageIter != openedImages.end();)
         {
-            ImGui::BeginTabBar("##OpenedImageTabs", ImGuiTabBarFlags_DrawSelectedOverline);
-            for (auto openedImageIter = openedImages.begin(); openedImageIter != openedImages.end();)
+            if (openedImageIter->imageStatus == ImageStatus::UNLOADED)
             {
-                if (openedImageIter->imageStatus == ImageStatus::UNLOADED)
-                {
-                    ++openedImageIter;
-                    continue;
-                }
-                ImGuiTabItemFlags flag = ImGuiTabItemFlags_None;
-                if (activateLastWindow && openedImageIter == --openedImages.end())
-                {
-                    activateLastWindow = false;
-                    flag |= ImGuiTabItemFlags_SetSelected;
-                }
-                if (ImGui::BeginTabItem(openedImageIter->cache.filenameShownOnTabBar.data(), &openedImageIter->windowOpened, flag))
-                {
-                    if (openedImageIter->imageStatus == ImageStatus::IMAGE_COMPRESSED && !openedImageIter->cache.isCompressedTexture)
-                    {
-                        // 载入压缩后的图像
-                        openedImageIter->cache.compressedImage = cv::imdecode(openedImageIter->compressedImage, cv::IMREAD_UNCHANGED);
-                        openedImageIter->textureStatus = loadTextureFromMemory(openedImageIter->cache.compressedImage,
-                                                                               openedImageIter->cache.textureResource);
-                    }
-                    else if (openedImageIter->textureStatus.result == TextureLoadResult::UNLOADED)
-                    {
-                        // 载入原图
-                        openedImageIter->textureStatus = loadTextureFromMemory(openedImageIter->loadedImage,
-                                                                               openedImageIter->cache.textureResource);
-                    }
-                    activeImageWindowIdx = openedImageIter - openedImages.begin();
-                    ImVec2 cursorPos = ImGui::GetCursorPos();
-                    ImVec2 contentRegionAvail = ImGui::GetContentRegionAvail();
-                    if (openedImageIter->textureStatus.result == TextureLoadResult::OK)
-                    {
-                        float imgDisplayScaleFactor = std::min(contentRegionAvail.x / openedImageIter->loadedImage.cols,
-                                                               contentRegionAvail.y / openedImageIter->loadedImage.rows);
-                        ImGui::SetCursorPos({cursorPos.x + (contentRegionAvail.x - openedImageIter->loadedImage.cols * imgDisplayScaleFactor) * 0.5f,
-                                             cursorPos.y + (contentRegionAvail.y - openedImageIter->loadedImage.rows * imgDisplayScaleFactor) * 0.5f});
-                        ImGui::Image((ImTextureID)openedImageIter->cache.textureResource.get(),
-                                     ImVec2{openedImageIter->loadedImage.cols * imgDisplayScaleFactor,
-                                            openedImageIter->loadedImage.rows * imgDisplayScaleFactor});
-                    }
-                    else if (openedImageIter->textureStatus.result == TextureLoadResult::IMAGE_TOO_BIG)
-                    {
-                        ImGui::Text("Image is too big. Unable to display image.");
-                    }
-                    else if (openedImageIter->textureStatus.result == TextureLoadResult::INVALID_IMAGE)
-                    {
-                        ImGui::Text("Invalid Image data.");
-                    }
-                    else if (openedImageIter->textureStatus.result == TextureLoadResult::OTHER_D3D_ERROR)
-                    {
-                        ImGui::Text("Direct3D Error, code: %ld.", openedImageIter->textureStatus.errCode);
-                    }
-                    ImGui::EndTabItem();
-                    ++openedImageIter;
-                }
-                else if (!openedImageIter->windowOpened)
-                {
-                    CompressorManager::get().removeTask(openedImageIter->compressHandle);
-                    openedImageIter = openedImages.erase(openedImageIter);
-                }
-                else
-                {
-                    ++openedImageIter;
-                }
+                ++openedImageIter;
+                continue;
             }
-            openedImages.shrink_to_fit();
-            ImGui::EndTabBar();
+            ImGuiTabItemFlags flag = ImGuiTabItemFlags_None;
+            if (activateLastTab && openedImageIter == --openedImages.end())
+            {
+                activateLastTab = false;
+                flag |= ImGuiTabItemFlags_SetSelected;
+            }
+
+            if (ImGui::BeginTabItem(openedImageIter->cache.filenameShownOnTabBar.data(),
+                                    &openedImageIter->windowOpened, flag)) // 选中的选项卡
+            {
+                // 按需将图片载入gpu
+                if (openedImageIter->imageStatus == ImageStatus::IMAGE_COMPRESSED && !openedImageIter->cache.isCompressedTexture)
+                {
+                    // 已压缩完毕，载入压缩后的图像
+                    openedImageIter->cache.compressedImage = cv::imdecode(openedImageIter->compressedImage, cv::IMREAD_UNCHANGED);
+                    openedImageIter->textureStatus = loadTextureFromMemory(openedImageIter->cache.compressedImage,
+                                                                           openedImageIter->cache.textureResource);
+                }
+                else if (openedImageIter->textureStatus.result == TextureLoadResult::UNLOADED)
+                {
+                    // 未压缩完毕，载入原图
+                    openedImageIter->textureStatus = loadTextureFromMemory(openedImageIter->loadedImage,
+                                                                           openedImageIter->cache.textureResource);
+                }
+
+                activeImageTabIdx = openedImageIter - openedImages.begin();
+
+                ImVec2 cursorPos = ImGui::GetCursorPos();
+                ImVec2 contentRegionAvail = ImGui::GetContentRegionAvail();
+                if (openedImageIter->textureStatus.result == TextureLoadResult::OK)
+                {
+                    // 根据窗口大小和图片大小调整显示比例
+                    float imgDisplayScaleFactor = std::min(contentRegionAvail.x / openedImageIter->loadedImage.cols,
+                                                           contentRegionAvail.y / openedImageIter->loadedImage.rows);
+                    // 居中
+                    ImGui::SetCursorPos(
+                        {cursorPos.x + (contentRegionAvail.x - openedImageIter->loadedImage.cols * imgDisplayScaleFactor) * 0.5f,
+                         cursorPos.y + (contentRegionAvail.y - openedImageIter->loadedImage.rows * imgDisplayScaleFactor) * 0.5f});
+                    // 显示图片
+                    ImGui::Image((ImTextureID)openedImageIter->cache.textureResource.get(),
+                                 ImVec2{openedImageIter->loadedImage.cols * imgDisplayScaleFactor,
+                                        openedImageIter->loadedImage.rows * imgDisplayScaleFactor});
+                }
+                else if (openedImageIter->textureStatus.result == TextureLoadResult::IMAGE_TOO_BIG) // 载入图片错误处理
+                {
+                    ImGui::Text("Image is too big. Unable to display image.");
+                }
+                else if (openedImageIter->textureStatus.result == TextureLoadResult::INVALID_IMAGE)
+                {
+                    ImGui::Text("Invalid Image data.");
+                }
+                else if (openedImageIter->textureStatus.result == TextureLoadResult::OTHER_D3D_ERROR)
+                {
+                    ImGui::Text("Direct3D Error, code: %ld.", openedImageIter->textureStatus.errCode);
+                }
+
+                ImGui::EndTabItem();
+                ++openedImageIter;
+            }
+            else if (!openedImageIter->windowOpened) // 选项卡被关闭
+            {
+                CompressorManager::get().removeTask(openedImageIter->compressHandle);
+                openedImageIter = openedImages.erase(openedImageIter);
+            }
+            else // 选项卡未被选中
+            {
+                ++openedImageIter;
+            }
         }
+        openedImages.shrink_to_fit();
+        ImGui::EndTabBar();
     }
     ImGui::End();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
+}
 
+// 显示压缩选项
+void GUIapp::GUIappImpl::showUI_compressOptions()
+{
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4{26 / 255.0f, 26 / 255.0f, 26 / 255.0f, 1.0f});
     if (ImGui::Begin("Compress Options", nullptr, ImGuiWindowFlags_NoMove))
     {
@@ -369,7 +396,7 @@ void GUIapp::GUIappImpl::renderUI()
                 image.imageStatus = ImageStatus::PEDDING_FOR_COMPRESS;
                 image.cache.filenameShownOnTabBar = wstringToUTF8string(std::filesystem::path{image.inputImagePath}.filename());
                 openedImages.emplace_back(std::move(image));
-                activateLastWindow = true;
+                activateLastTab = true;
             }
             else
             {
@@ -377,7 +404,8 @@ void GUIapp::GUIappImpl::renderUI()
             }
         };
 
-        Compressor::Params defaultParam = (openedImages.empty() ? emptyImageData : openedImages[activeImageWindowIdx]).compressParams;
+        // 新打开图片的默认压缩参数，为当前图片的压缩参数
+        Compressor::Params defaultParam = (openedImages.empty() ? emptyImageData : openedImages[activeImageTabIdx]).compressParams;
 
         // 加载图片按钮
         if (ImGui::Button("Load Image"))
@@ -395,7 +423,7 @@ void GUIapp::GUIappImpl::renderUI()
         droppedImages.clear();
         droppedImages.shrink_to_fit();
 
-        ImageData &selectedImage = openedImages.empty() ? emptyImageData : openedImages[activeImageWindowIdx];
+        ImageData &selectedImage = openedImages.empty() ? emptyImageData : openedImages[activeImageTabIdx];
         ImGui::SameLine();
         const char *imageStatusString[ImageStatus::_count] = {
             "No Image Loaded",
@@ -449,21 +477,12 @@ void GUIapp::GUIappImpl::renderUI()
     }
     ImGui::End();
     ImGui::PopStyleColor();
-
-    // ImGui::ShowDemoWindow();
-
-    ImGui::End();
-}
-
-void GUIapp::GUIappImpl::onDropImageFile(std::wstring &&path)
-{
-    droppedImages.emplace_back(std::move(path));
 }
 
 void GUIapp::GUIappImpl::refreshOpenedImageStatus()
 {
     using namespace std::chrono_literals;
-    static std::chrono::milliseconds unchangedDuration{0};
+    static std::chrono::milliseconds noChangeDuration{0};
 
     static auto lastTime = std::chrono::steady_clock::now();
 
@@ -471,25 +490,22 @@ void GUIapp::GUIappImpl::refreshOpenedImageStatus()
     for (auto &&image : openedImages)
     {
         auto now = std::chrono::steady_clock::now();
-        unchangedDuration += std::chrono::duration_cast<std::chrono::milliseconds>(now - lastTime);
+        noChangeDuration += std::chrono::duration_cast<std::chrono::milliseconds>(now - lastTime);
         lastTime = now;
         // 压缩参数改变时
-        if (image.imageStatus != ImageStatus::UNLOADED && image.imageStatus != ImageStatus::COMPRESSING
-            && (image.compressParams_old.quality != image.compressParams.quality
-                || image.compressParams_old.scale != image.compressParams.scale
-                || image.compressParams_old.format != image.compressParams.format))
+        if (image.imageStatus != ImageStatus::UNLOADED
+            && image.imageStatus != ImageStatus::COMPRESSING
+            && image.compressParams_old != image.compressParams)
         {
             image.imageStatus = ImageStatus::PEDDING_FOR_COMPRESS;
-            unchangedDuration = 0ms;
-            image.compressParams_old.quality = image.compressParams.quality;
-            image.compressParams_old.format = image.compressParams.format;
-            image.compressParams_old.scale = image.compressParams.scale;
+            noChangeDuration = 0ms;
+            image.compressParams_old = image.compressParams;
         }
 
         if (image.imageStatus == ImageStatus::PEDDING_FOR_COMPRESS
-            && (unchangedDuration > 360ms || image.compressedImage.empty()))
+            && (noChangeDuration > 360ms || image.compressedImage.empty()))
         {
-            unchangedDuration = 0ms;
+            noChangeDuration = 0ms;
             image.compressHandle = imgCompressor.addCompressionTask(image.loadedImage, image.compressParams);
             image.imageStatus = ImageStatus::COMPRESSING;
         }

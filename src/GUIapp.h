@@ -47,6 +47,9 @@ private:
         static void onDropImageFile(std::wstring &&path);
 
     private:
+        static void showUI_imageDisplay();
+        static void showUI_compressOptions();
+
         static void refreshOpenedImageStatus();
     };
 

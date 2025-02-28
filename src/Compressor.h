@@ -20,6 +20,16 @@ public:
             WEBP,
             _count
         } format = JPEG; // 输出格式
+
+        constexpr bool operator==(const Params &rhs) const
+        {
+            return scale == rhs.scale && quality == rhs.quality && toGray == rhs.toGray && format == rhs.format;
+        }
+
+        constexpr bool operator!=(const Params &rhs) const
+        {
+            return scale != rhs.scale || quality != rhs.quality || toGray != rhs.toGray || format != rhs.format;
+        }
     };
 
     enum class Status
