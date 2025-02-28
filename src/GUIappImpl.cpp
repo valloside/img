@@ -13,6 +13,7 @@ enum ImageStatus
     COMPRESS_ERROR = 4,
     _count
 };
+
 struct TextureLoadResult
 {
     enum Result : uint8_t
@@ -27,7 +28,7 @@ struct TextureLoadResult
     HRESULT errCode;
 };
 
-struct ImagetextureStatuseleter
+struct ImageTextureResDeleter
 {
     void operator()(ID3D11ShaderResourceView *data)
     {
@@ -44,7 +45,7 @@ struct CompressorManager
     }
 };
 
-using ImageTextureRes = std::unique_ptr<ID3D11ShaderResourceView, ImagetextureStatuseleter>;
+using ImageTextureRes = std::unique_ptr<ID3D11ShaderResourceView, ImageTextureResDeleter>;
 
 struct ImageData
 {
@@ -57,8 +58,9 @@ struct ImageData
     struct
     {
         cv::Mat         compressedImage{};
-        std::string     filename;
+        std::string     filenameShownOnTabBar;
         ImageTextureRes textureResource;
+        bool            isCompressedTexture = false;
     } cache;
 
     Compressor::Params
@@ -296,17 +298,18 @@ void GUIapp::GUIappImpl::renderUI()
                     activateLastWindow = false;
                     flag |= ImGuiTabItemFlags_SetSelected;
                 }
-                if (ImGui::BeginTabItem(openedImageIter->cache.filename.data(), &openedImageIter->windowOpened, flag))
+                if (ImGui::BeginTabItem(openedImageIter->cache.filenameShownOnTabBar.data(), &openedImageIter->windowOpened, flag))
                 {
-                    if (openedImageIter->imageStatus == ImageStatus::IMAGE_COMPRESSED
-                        && openedImageIter->textureStatus.result == TextureLoadResult::UNLOADED)
+                    if (openedImageIter->imageStatus == ImageStatus::IMAGE_COMPRESSED && !openedImageIter->cache.isCompressedTexture)
                     {
+                        // 载入压缩后的图像
                         openedImageIter->cache.compressedImage = cv::imdecode(openedImageIter->compressedImage, cv::IMREAD_UNCHANGED);
                         openedImageIter->textureStatus = loadTextureFromMemory(openedImageIter->cache.compressedImage,
                                                                                openedImageIter->cache.textureResource);
                     }
-                    else if (!openedImageIter->textureStatus.result == TextureLoadResult::UNLOADED)
+                    else if (openedImageIter->textureStatus.result == TextureLoadResult::UNLOADED)
                     {
+                        // 载入原图
                         openedImageIter->textureStatus = loadTextureFromMemory(openedImageIter->loadedImage,
                                                                                openedImageIter->cache.textureResource);
                     }
@@ -364,7 +367,7 @@ void GUIapp::GUIappImpl::renderUI()
             if (!image.loadedImage.empty())
             {
                 image.imageStatus = ImageStatus::PEDDING_FOR_COMPRESS;
-                image.cache.filename = wstringToUTF8string(std::filesystem::path{image.inputImagePath}.filename());
+                image.cache.filenameShownOnTabBar = wstringToUTF8string(std::filesystem::path{image.inputImagePath}.filename());
                 openedImages.emplace_back(std::move(image));
                 activateLastWindow = true;
             }
