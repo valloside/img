@@ -321,6 +321,7 @@ void GUIapp::GUIappImpl::showUI_imageDisplay()
                 {
                     // 已压缩完毕，载入压缩后的图像
                     openedImageIter->cache.compressedImage = cv::imdecode(openedImageIter->compressedImage, cv::IMREAD_UNCHANGED);
+                    openedImageIter->cache.isCompressedTexture = true;
                     openedImageIter->textureStatus = loadTextureFromMemory(openedImageIter->cache.compressedImage,
                                                                            openedImageIter->cache.textureResource);
                 }
@@ -512,6 +513,7 @@ void GUIapp::GUIappImpl::refreshOpenedImageStatus()
         if (image.imageStatus == ImageStatus::COMPRESSING && imgCompressor.checkTaskFinished(image.compressHandle))
         {
             image.imageStatus = ImageStatus::IMAGE_COMPRESSED;
+            image.cache.isCompressedTexture = false;
             image.compressedImage = imgCompressor.getCompressResult(image.compressHandle);
             if (image.compressedImage.empty())
                 image.imageStatus = ImageStatus::COMPRESS_ERROR;
